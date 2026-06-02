@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KPI Alignment Dashboard</title>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f9;
+      color: #1f2937;
+    }
+    header {
+      background: linear-gradient(135deg, #1f3c88, #0f766e);
+      color: white;
+      padding: 24px 32px;
+    }
+    header h1 { margin: 0 0 6px; font-size: 28px; }
+    header p { margin: 0; opacity: 0.9; }
+    .container { padding: 24px 32px; }
+    .upload-box {
+      background: white;
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      margin-bottom: 22px;
+    }
+    input[type="file"] {
+      padding: 12px;
+      border: 1px dashed #94a3b8;
+      border-radius: 10px;
+      width: 100%;
+      background: #f8fafc;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+    .card {
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      border-left: 6px solid #1f3c88;
+    }
+    .card .label { color: #64748b; font-size: 14px; }
+    .card .value { font-size: 34px; font-weight: bold; margin-top: 8px; color: #1f3c88; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+    .chart-box, .table-box {
+      background: white;
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    .chart-box h3, .table-box h3 { margin-top: 0; }
+    canvas { min-height: 300px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 9px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #1f3c88;
+      color: white;
+      position: sticky;
+      top: 0;
+    }
+    .table-wrap {
+      max-height: 420px;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+    }
+    .note {
+      font-size: 13px;
+      color: #64748b;
+      margin-top: 10px;
+    }
+    @media (max-width: 900px) {
+      .cards, .grid { grid-template-columns: 1fr; }
+      header, .container { padding-left: 18px; padding-right: 18px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>KPI Alignment Dashboard</h1>
+  <p>Upload the KPIs Alignment Excel file to generate summary cards, charts, and mapping table.</p>
+</header>
+
+<div class="container">
+
+  <div class="upload-box">
+    <strong>Upload Excel file:</strong>
+    <input type="file" id="excelFile" accept=".xlsx,.xls" />
+    <div class="note">
+      This dashboard reads your columns: KPI Classification, Domain, Strategic Goal, KPI, Ejada, Annual Plan, and Accreditation Criteria.
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="label">Total KPIs</div>
+      <div class="value" id="totalKpis">0</div>
+    </div>
+    <div class="card">
+      <div class="label">Mapped to Ejada</div>
+      <div class="value" id="ejadaCount">0</div>
+    </div>
+    <div class="card">
+      <div class="label">Mapped to Annual Plan</div>
+      <div class="value" id="annualCount">0</div>
+    </div>
+    <div class="card">
+      <div class="label">Mapped to Accreditation</div>
+      <div class="value" id="accreditationCount">0</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="chart-box">
+      <h3>KPIs by Domain</h3>
+      <canvas id="domainChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+      <h3>Alignment Coverage</h3>
+      <canvas id="coverageChart"></canvas>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="chart-box">
+      <h3>KPIs by Strategic Goal</h3>
+      <canvas id="goalChart"></canvas>
+    </div>
+
+    <div class="chart-box">
+      <h3>ESG / Classification Distribution</h3>
+      <canvas id="classificationChart"></canvas>
+    </div>
+  </div>
+
+  <div class="table-box">
+    <h3>KPI Mapping Details</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>S.N.</th>
+            <th>Classification</th>
+            <th>Domain</th>
+            <th>Strategic Goal</th>
+            <th>Strategic Objective</th>
+            <th>KPI</th>
+            <th>Ejada</th>
+            <th>Annual Plan</th>
+            <th>Accreditation</th>
+          </tr>
+        </thead>
+        <tbody id="kpiTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let domainChart, coverageChart, goalChart, classificationChart;
+
+document.getElementById("excelFile").addEventListener("change", function (event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function (e) {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: "array" });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: "" });
+
+    const records = prepareKpiData(rows);
+    updateDashboard(records);
+  };
+
+  reader.readAsArrayBuffer(file);
+});
+
+function prepareKpiData(rows) {
+  // Your file uses row 1 as section headers and row 2 as real headers.
+  // Data starts from row 3, so we slice(2).
+  const dataRows = rows.slice(2);
+
+  let lastClassification = "";
+  let lastDomain = "";
+
+  return dataRows
+    .map(row => {
+      const classification = clean(row[0]) || lastClassification;
+      const domain = clean(row[2]) || lastDomain;
+
+      if (clean(row[0])) lastClassification = clean(row[0]);
+      if (clean(row[2])) lastDomain = clean(row[2]);
+
+      return {
+        sn: row[1],
+        classification,
+        domain,
+        goal: clean(row[3]),
+        objective: clean(row[4]),
+        kpi: clean(row[5]),
+        ejada: clean(row[6]),
+        annual: clean(row[7]),
+        accreditation: clean(row[8])
+      };
+    })
+    .filter(item => item.sn || item.kpi);
+}
+
+function clean(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function shortText(value, max = 55) {
+  if (!value) return "Not specified";
+  return value.length > max ? value.substring(0, max) + "..." : value;
+}
+
+function countBy(records, key) {
+  const result = {};
+  records.forEach(item => {
+    const value = item[key] || "Not specified";
+    result[value] = (result[value] || 0) + 1;
+  });
+  return result;
+}
+
+function updateDashboard(records) {
+  const total = records.length;
+  const ejada = records.filter(x => x.ejada).length;
+  const annual = records.filter(x => x.annual).length;
+  const accreditation = records.filter(x => x.accreditation).length;
+
+  document.getElementById("totalKpis").textContent = total;
+  document.getElementById("ejadaCount").textContent = ejada;
+  document.getElementById("annualCount").textContent = annual;
+  document.getElementById("accreditationCount").textContent = accreditation;
+
+  makeBarChart(
+    "domainChart",
+    "KPIs",
+    countBy(records.map(x => ({...x, domain: shortText(x.domain, 35)})), "domain"),
+    "domainChart"
+  );
+
+  makeBarChart(
+    "goalChart",
+    "KPIs",
+    countBy(records.map(x => ({...x, goal: shortText(x.goal, 45)})), "goal"),
+    "goalChart"
+  );
+
+  makeDoughnutChart("coverageChart", {
+    "Ejada": ejada,
+    "Annual Plan": annual,
+    "Accreditation": accreditation,
+    "Not mapped to Ejada": total - ejada
+  });
+
+  makePieChart("classificationChart", countBy(records, "classification"));
+
+  fillTable(records);
+}
+
+function destroyChart(chart) {
+  if (chart) chart.destroy();
+}
+
+function makeBarChart(canvasId, label, groupedData, chartName) {
+  const labels = Object.keys(groupedData);
+  const values = Object.values(groupedData);
+  const ctx = document.getElementById(canvasId);
+
+  if (chartName === "domainChart") destroyChart(domainChart);
+  if (chartName === "goalChart") destroyChart(goalChart);
+
+  const newChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{ label: label, data: values }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 20 } }
+      }
+    }
+  });
+
+  if (chartName === "domainChart") domainChart = newChart;
+  if (chartName === "goalChart") goalChart = newChart;
+}
+
+function makeDoughnutChart(canvasId, groupedData) {
+  destroyChart(coverageChart);
+
+  coverageChart = new Chart(document.getElementById(canvasId), {
+    type: "doughnut",
+    data: {
+      labels: Object.keys(groupedData),
+      datasets: [{ data: Object.values(groupedData) }]
+    },
+    options: { responsive: true }
+  });
+}
+
+function makePieChart(canvasId, groupedData) {
+  destroyChart(classificationChart);
+
+  classificationChart = new Chart(document.getElementById(canvasId), {
+    type: "pie",
+    data: {
+      labels: Object.keys(groupedData),
+      datasets: [{ data: Object.values(groupedData) }]
+    },
+    options: { responsive: true }
+  });
+}
+
+function fillTable(records) {
+  const tbody = document.getElementById("kpiTable");
+  tbody.innerHTML = "";
+
+  records.forEach(item => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${item.sn || ""}</td>
+      <td>${item.classification || ""}</td>
+      <td>${item.domain || ""}</td>
+      <td>${item.goal || ""}</td>
+      <td>${item.objective || ""}</td>
+      <td>${item.kpi || ""}</td>
+      <td>${item.ejada ? "Yes" : "No"}</td>
+      <td>${item.annual ? "Yes" : "No"}</td>
+      <td>${item.accreditation ? "Yes" : "No"}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+</script>
+
+</body>
+</html>
